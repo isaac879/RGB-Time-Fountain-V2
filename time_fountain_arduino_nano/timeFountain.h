@@ -4,8 +4,8 @@
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
 #define RED_PIN PD5
-#define GREEN_PIN PD6
-#define BLUE_PIN PD3
+#define GREEN_PIN PD3
+#define BLUE_PIN PD6
 
 #define MAX_STRING_LENGTH 10
 
@@ -17,8 +17,8 @@
 #define ON true
 #define OFF false
 
-#define FIRMWARE_VERSION "2.0.0"
-//#define EEPROM_ADDRESS_MODE 36
+#define FIRMWARE_VERSION "2.2.0"
+#define EEPROM_ADDRESS_MODE 0
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
@@ -33,9 +33,12 @@ void sinDirections(int, int, int);
 void setPosition(float, char);
 void setSinCountIncrement(float);
 void setMode(int);
-int setDropFrequency(const char []);
+int setDropFrequency(char []);
 void switchCase(char);
 void initTimeFountain(void);
+void modeLoops(void);
+void updateEeprom(void);
+void setEepromValues(void);
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
 

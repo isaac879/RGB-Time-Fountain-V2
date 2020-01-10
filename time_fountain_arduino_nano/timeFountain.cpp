@@ -1,12 +1,12 @@
 #include "timeFountain.h"
 #include <Iibrary.h>//A library I created for Arduino that contains some simple functions I commonly use. Library available at: https://github.com/isaac879/Iibrary
 #include <Wire.h> //For I2C with the ATtiny85
-//#include <EEPROM.h>
+#include <EEPROM.h>
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
 //Global variables
-unsigned int base_loop_count = 1010;
+unsigned int base_loop_count = 1750;//1010
 
 unsigned int phase_offset = 10;
 
@@ -23,10 +23,17 @@ unsigned int red_max_count = base_loop_count;
 unsigned int green_max_count = base_loop_count;
 unsigned int blue_max_count = base_loop_count;
 
+unsigned int red_max_count_2 = base_loop_count;
+unsigned int green_max_count_2 = base_loop_count;
+unsigned int blue_max_count_2 = base_loop_count;
+
 unsigned int base_count = 0;
 unsigned int red_count = 0;
 unsigned int green_count = 0;
 unsigned int blue_count = 0;
+unsigned int red_count_2 = 0;
+unsigned int green_count_2 = 0;
+unsigned int blue_count_2 = 0;
 float pump_drop_frequency = 0;
 
 int red_sin_direction = POSITIVE;
@@ -34,10 +41,10 @@ int green_sin_direction = POSITIVE;
 int blue_sin_direction = POSITIVE;
 
 //char stringText[MAX_STRING_LENGTH + 1];
+char stringText[MAX_STRING_LENGTH + 1];
 
 short sin_amplitude = 180;
 
-bool flag_pump_off = true;
 bool flag_red_sin = false;
 bool flag_green_sin = false;
 bool flag_blue_sin = false;
@@ -46,7 +53,7 @@ short mode_status = 0;//just used for a status reprot
 float base_loop_count_temp = base_loop_count * 0.00277777777777777777777; //1/360
 
 float sin_count = 0;
-float sin_count_increment = 0.0174533;
+float sin_count_increment = 0.0174533 * 3; //1 degree =  0.0174533 rads
 
 bool flag_ms_start = true;
 bool flag_ms_stop = false;
@@ -74,10 +81,13 @@ void setBaseStrobeFrequency(unsigned int targetFreq){
         base_loop_count_temp = base_loop_count * 0.00277777777777777777777;
         
         red_max_count += diff;
+        red_max_count_2 += diff;
         red_duty_value = (float)red_max_count * red_duty / 100.0;
         green_max_count += diff;
+        green_max_count_2 += diff;
         green_duty_value = (float)green_max_count * green_duty / 100.0;
         blue_max_count += diff;
+        blue_max_count_2 += diff;
         blue_duty_value = (float)blue_max_count * blue_duty / 100.0;
         printi(F("Loop count set to: "), base_loop_count);
     }
@@ -90,31 +100,31 @@ void setPhase(int offset, const char colour[]){
     green_count = 0;
     blue_count = 0;
     
-    if(strcmp(colour, "R") == 1){
+    if(strcmp(colour, "R") == 0){
         red_max_count += offset;
         printi(F("red_max_count set to: "), (int)red_max_count);
     }
-    else if(strcmp(colour, "G") == 1){
+    else if(strcmp(colour, "G") == 0){
         green_max_count += offset;
         printi(F("green_max_count set to: "), (int)green_max_count);
     }
-    else if(strcmp(colour, "B") == 1){
+    else if(strcmp(colour, "B") == 0){
         blue_max_count += offset;
         printi(F("blue_max_count set to: "), (int)blue_max_count);
     }
-    else if(strcmp(colour, "RG") == 1){
+    else if(strcmp(colour, "RG") == 0){
         red_max_count += offset;
         green_max_count += offset;
         printi(F("red_max_count set to: "), (int)red_max_count);
         printi(F("green_max_count set to: "), (int)green_max_count);
     }
-    else if(strcmp(colour, "RB") == 1){
+    else if(strcmp(colour, "RB") == 0){
         red_max_count +=  offset;
         blue_max_count += offset;
         printi(F("red_max_count set to: "), (int)red_max_count);
         printi(F("blue_max_count set to: "), (int)blue_max_count);
     }
-    else if(strcmp(colour, "GB") == 1){
+    else if(strcmp(colour, "GB") == 0){
         green_max_count += offset;
         blue_max_count += offset;
         printi(F("green_max_count set to: "), (int)green_max_count);
@@ -228,24 +238,23 @@ void setSinCountIncrement(float deg){
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
-//void
-
-/*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
-
 void switchCase(char command){
-    delay(10);//wait to make sure all data in the serial message has arived   
-    char stringText[MAX_STRING_LENGTH + 1];//clear stringText
+    delay(10); //wait to make sure all data in the serial message has arived 
+    memset(&stringText[0], 0, sizeof(stringText)); //clear the array
     while(Serial.available()){//set elemetns of stringText to the serial values sent
-        char digit = Serial.read();
-        //stringText += digit;
-        strncat(stringText, &digit, 1);
+        char digit = Serial.read(); //read in a char
+        strncat(stringText, &digit, 1); //add digit to the end of the array
         //if(stringText.length() >= MAX_STRING_LENGTH) break;//exit the loop when the stringText array is full
     }
     serialFlush();//Clear any excess data in the serial buffer
+    int serialCommandValueInt = atoi(stringText); //converts stringText to an int
+    float serialCommandValueFloat = atof(stringText); ////converts stringText to an float
     
-    int serialCommandValueInt = 0;//stringText.toInt();
-    float serialCommandValueFloat = 0;//stringText.toFloat();
-
+//    printi("command:\t", command, "\n");
+//    printi("String text:\t");
+//    printi(stringText);
+//    printi("\n");
+    if(command == 'G' && stringText[0] == 0) return;
     switch(command){
         case 'f'://set base strobe frequency
             setBaseStrobeFrequency(serialCommandValueInt);
@@ -254,7 +263,7 @@ void switchCase(char command){
             setDropFrequency(stringText);
         break;
         case 'm'://set mode
-            if(serialCommandValueInt > 0 && serialCommandValueInt <= 46){//set maximum mode number
+            if(serialCommandValueInt > 0 && serialCommandValueInt <= 48){//set maximum mode number
                 setMode(serialCommandValueInt);
                 printi(F("Mode set to: "), serialCommandValueInt);
             }
@@ -264,8 +273,8 @@ void switchCase(char command){
         break;
         case 'o'://everything off
             printi(F("Time Fountain switched off...\n"));
+            setDropFrequency((char *)"0");
             coloursOn(OFF, OFF, OFF);
-            flag_pump_off = true;
         break;
         case 'a':
             sin_amplitude = abs(serialCommandValueInt);
@@ -301,8 +310,18 @@ void switchCase(char command){
         case 's':
             setSinCountIncrement(serialCommandValueFloat);
         break;
+        case '+'://Bluetooth module sents some test when connecting begging with a + so just ignore it and flush the serial buffer
+            delay(50);
+            serialFlush();
+        break;
+        case 'U': //Update the saved valuses in EEPROM
+            updateEeprom();
+        break;
         case 'H':
             printi(F("______________Status______________\n"));
+            printi(F("Firmware version: "));
+            printi(F(FIRMWARE_VERSION));
+            printi(F("\n"));
             printi(F("Base loop count: "), base_loop_count, F("\n\n")); 
             printi(F("Red loop count: "), red_max_count);
             printi(F("Red duty: "), red_duty, 1, F("\n\n"));
@@ -370,7 +389,7 @@ void setMode(int mode){
     green_max_count = base_loop_count;
     blue_max_count = base_loop_count;
     sinDirections(POSITIVE, POSITIVE, POSITIVE);
-    sin_amplitude = 45;
+    sin_amplitude = 180;
     setLedDuty(base_duty);
     TIMSK1 &= ~(1 << OCIE1A);// disable timer compare interrupt
     
@@ -620,21 +639,25 @@ void setMode(int mode){
             setSingleDuty(70, 'G');
             setSingleDuty(70, 'B');
         break;
+        case 47:
+            modeLoops();
+        break;
     }
 }
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
-int setDropFrequency(const char freq[]){
-//    if(freq.toFloat() < 0 ||  freq.toFloat() > 60){
-//        printi(F("Invalid frequency... It must be between 0 and 60 Hz. Frequency entered: "), freq.toFloat(), 3, F("Hz"));
-//        return -1;
-//    }
-    
+int setDropFrequency(char freq[]){
+    if(!(atof(freq) >= 0 &&  atof(freq) <= 255)){//60 is the actual maximum pump frequency
+        printi(F("Invalid duty... It must be between 0 and 255. Frequency entered: "), atof(freq), 3, F("\n"));
+        return -1;
+    }
+    if(freq[0] == '\0'){//if it's an emty string
+        freq[0] = '0';//set to char 0
+    }
     Wire.beginTransmission(I2C_ADDRESS_ATTINY85);
-    Wire.write(freq);
+    Wire.write(freq, 3);
     int returnVal = Wire.endTransmission();
-    
     if(returnVal == 0){//Sucsessful
         pump_drop_frequency = atof(freq); 
         printi(F("Pump drop rate set to: "));
@@ -658,6 +681,20 @@ int setDropFrequency(const char freq[]){
         printi(F("Unknown error comunicating on the I2C bus\n"));
         return -1;
     }   
+    printi(F("after ifs\n"));
+}
+
+/*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+void updateEeprom(void){//Save current settings
+    EEPROM.put(EEPROM_ADDRESS_MODE, mode_status);
+    printi(F("\nSaved current settings.\n"));
+}
+
+/*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+void setEepromValues(void){
+    EEPROM.get(EEPROM_ADDRESS_MODE, mode_status);
 }
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
@@ -682,8 +719,178 @@ void initTimeFountain(){
     OCR1A = 15624;//m16000000 / (1*1024) - 1;// = (16*10^6) / (36*1024) - 1 (must be <65536)  // set compare match register for 1hz increments
     TCCR1B |= (1 << WGM12);// turn on CTC mode
     TCCR1B |= (1 << CS12) | (1 << CS10);  // Set CS12 and CS10 bits for 1024 prescaler
-    setMode(7);
-    flag_pump_off = false;
-    setDropFrequency("0");
+    setEepromValues();
+    setMode(mode_status);
 }
+
+/*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+void modeLoops(void){
+    while(mode_status <= 46){
+        if(Serial.available()){//Checks if serial data is available 
+            char c = Serial.read();//read and store the first character sent
+            switchCase(c);//TODO: test with: switchCase(Serial.read()); and/or switchCase((char)Serial.read());  
+        }
+    
+        if(red_count < red_duty_value){//Switch LEDs on/off for the set duty/frequency
+            PORTD |= _BV(RED_PIN);  //write port HIGH
+        }
+        else{
+            PORTD &= ~_BV(RED_PIN);  //write port LOW
+        }
+        
+        if(green_count < green_duty_value){
+            PORTD |= _BV(GREEN_PIN);  //write port HIGH
+        }
+        else{
+            PORTD &= ~_BV(GREEN_PIN);  //write port LOW
+        }
+        
+        if(blue_count < blue_duty_value){
+            PORTD |= _BV(BLUE_PIN);  //write port HIGH
+        }
+        else{
+            PORTD &= ~_BV(BLUE_PIN);  //write port LOW
+        }
+    
+        base_count++;//Increment counts  
+        red_count++;
+        green_count++;
+        blue_count++;
+    
+        if(base_count >= base_loop_count){
+            base_count = 0;
+            if(flag_ms_stop){
+                us = micros() - us;
+                flag_ms_stop = false;
+                flag_ms_start = false;
+                float hz = 1/((float)us/1000000.0);
+                printi(F("Estimated frequency: "), hz, 3, F("Hz\n"));
+            }
+            if(flag_ms_start){
+                us = micros();
+                flag_ms_stop = true;
+            }
+                                //TODO: 1/360 calculated when sin amp is set?
+                                //add count offset if colour is hight when calculating cos
+            if(flag_red_sin){ //TODO: test removing sine amplitue
+                if(red_sin_direction == POSITIVE){
+                    red_count = base_loop_count_temp * (sin_amplitude * cos(sin_count) + sin_amplitude);
+                }
+                else{
+                    red_count = base_loop_count_temp * (360 - (sin_amplitude * cos(sin_count) + sin_amplitude));
+                }
+            }
+            if(flag_green_sin){
+                if(green_sin_direction == POSITIVE){
+                    green_count = base_loop_count_temp * (sin_amplitude * cos(sin_count) + sin_amplitude);
+                }
+                else{
+                    green_count = base_loop_count_temp * (360 - (sin_amplitude * cos(sin_count) + sin_amplitude));
+                }
+                
+            }
+            if(flag_blue_sin){
+                if(blue_sin_direction == POSITIVE){
+                    blue_count = base_loop_count_temp * (sin_amplitude * cos(sin_count) + sin_amplitude);
+                }
+                else{
+                    blue_count = base_loop_count_temp * (360 - (sin_amplitude * cos(sin_count) + sin_amplitude));
+                }
+            }
+            
+            sin_count += sin_count_increment;//0.0174533 rads = 1 deg
+            if(sin_count >= 6.283188){//6.283188 radians in 360 degrees
+            }
+        }
+    
+        if(red_count >= red_max_count){
+            red_count = 0;
+        }
+        if(green_count >= green_max_count){
+            green_count = 0;
+        }
+        if(blue_count >= blue_max_count){
+            blue_count = 0;
+        }        
+    }
+    
+    while(mode_status == 47){
+        if(Serial.available()){//Checks if serial data is available 
+            char c = Serial.read();//read and store the first character sent
+            switchCase(c);//TODO: test with: switchCase(Serial.read()); and/or switchCase((char)Serial.read());  
+        }
+    
+        if(red_count < red_duty_value || red_count_2 < red_duty_value){//Switch LEDs on/off for the set duty/frequency
+            PORTD |= _BV(RED_PIN);  //write port HIGH
+        }
+        else{
+            PORTD &= ~_BV(RED_PIN);  //write port LOW
+        }
+        
+        if(green_count < green_duty_value || green_count_2 < green_duty_value){
+            PORTD |= _BV(GREEN_PIN);  //write port HIGH
+        }
+        else{
+            PORTD &= ~_BV(GREEN_PIN);  //write port LOW
+        }
+        
+        if(blue_count < blue_duty_value || blue_count_2 < blue_duty_value){
+            PORTD |= _BV(BLUE_PIN);  //write port HIGH
+        }
+        else{
+            PORTD &= ~_BV(BLUE_PIN);  //write port LOW
+        }
+    
+        base_count++;//Increment counts  
+        red_count++;
+        green_count++;
+        blue_count++;
+        red_count_2++;
+        green_count_2++;
+        blue_count_2++;
+    
+        if(base_count >= base_loop_count){
+            base_count = 0;
+            if(flag_ms_stop){
+                us = micros() - us;
+                flag_ms_stop = false;
+                flag_ms_start = false;
+                float hz = 1/((float)us/1000000.0);
+                printi(F("Estimated frequency: "), hz, 3, F("Hz\n"));
+            }
+            if(flag_ms_start){
+                us = micros();
+                flag_ms_stop = true;
+            }
+        }
+    
+        if(red_count >= red_max_count){
+            red_count = 0;
+        }
+        if(green_count >= green_max_count){
+            green_count = 0;
+        }
+        if(blue_count >= blue_max_count){
+            blue_count = 0;
+        }
+        if(red_count_2 >= red_max_count_2){
+            red_count_2 = 0;
+        }
+        if(green_count_2 >= green_max_count_2){
+            green_count_2 = 0;
+        }
+        if(blue_count_2 >= blue_max_count_2){
+            blue_count_2 = 0;
+        }
+    }
+
+    while(mode_status == 48){
+        if(Serial.available()){//Checks if serial data is available 
+            char c = Serial.read();//read and store the first character sent
+            switchCase(c);//TODO: test with: switchCase(Serial.read()); and/or switchCase((char)Serial.read());  
+        }
+    }
+}
+
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
