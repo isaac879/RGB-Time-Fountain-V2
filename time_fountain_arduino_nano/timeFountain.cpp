@@ -1,3 +1,12 @@
+/*--------------------------------------------------------------------------------------------------------------------------------------------------------
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, 
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER 
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS 
+ * IN THE SOFTWARE
+ * 
+ * Code written by isaac879
+ *--------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
 #include "timeFountain.h"
 #include <Iibrary.h>//A library I created for Arduino that contains some simple functions I commonly use. Library available at: https://github.com/isaac879/Iibrary
 #include <Wire.h> //For I2C with the ATtiny85
@@ -14,6 +23,7 @@ float red_duty = 3.0;
 float green_duty = 3.0;
 float blue_duty = 3.0;
 float base_duty = 3.0;
+float duty_increment = 0.3;
 
 unsigned int red_duty_value = (float)base_loop_count * red_duty / 100.0;//switching value to achieve the desired duty cycle
 unsigned int green_duty_value = (float)base_loop_count * green_duty / 100.0;//switching value to achieve the desired duty cycle
@@ -40,7 +50,6 @@ int red_sin_direction = POSITIVE;
 int green_sin_direction = POSITIVE;
 int blue_sin_direction = POSITIVE;
 
-//char stringText[MAX_STRING_LENGTH + 1];
 char stringText[MAX_STRING_LENGTH + 1];
 
 short sin_amplitude = 180;
@@ -55,10 +64,14 @@ float base_loop_count_temp = base_loop_count * 0.00277777777777777777777; //1/36
 float sin_count = 0;
 float sin_count_increment = 0.0174533 * 3; //1 degree =  0.0174533 rads
 
-bool flag_ms_start = true;
-bool flag_ms_stop = false;
-unsigned long ms;
+bool flag_us_start = true;
+bool flag_us_stop = false;
+
 unsigned long us;
+
+int red_duty_direction = 1;
+int green_duty_direction = 1;
+int blue_duty_direction = 1;
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
@@ -75,7 +88,7 @@ void setBaseStrobeFrequency(unsigned int targetFreq){
         printi(F("ERROR: loop count out of range (0-65,535)... value entered: "), (long)targetFreq);
     }
     else{
-        flag_ms_start = true;
+        flag_us_start = true;
         int diff = targetFreq - base_loop_count;
         base_loop_count = targetFreq;
         base_loop_count_temp = base_loop_count * 0.00277777777777777777777;
@@ -283,6 +296,15 @@ void switchCase(char command){
         case 'd':
             setLedDuty(serialCommandValueInt);
         break;
+        case 'D':
+            if(serialCommandValueFloat >= 0 && serialCommandValueFloat >= 100){
+                duty_increment = serialCommandValueFloat;
+                printi(F("duty_increment set to: "), duty_increment);
+            }
+            else{
+                printi(F("Invalid duty percentage increment... Value entered: "), serialCommandValueFloat, 3, "%\n");
+            }
+        break;
         case 'r':
             setPhase(serialCommandValueInt, "R");
         break;
@@ -331,8 +353,8 @@ void switchCase(char command){
             printi(F("Blue duty: "), blue_duty, 1, F("\n\n"));
             printi(F("Mode: "), mode_status, F("\n\n"));
             printi(F("Pump drop frequency: "), pump_drop_frequency, 1, F("Hz\n"));
-            printi(F("Sin increment: "), sin_count_increment);
-            printi(F("Sin peak "), sin_amplitude);
+            printi(F("Sine increment: "), radsToDeg(sin_count_increment), 3, F("Deg\n"));
+            printi(F("Sine peak "), sin_amplitude);
             printi(F("_____________________________\n\n"));              
         break;
         case 'h'://TODO: correct all values and ensure all commands are included they are correct
@@ -351,8 +373,8 @@ void switchCase(char command){
             printi(F("Blue count change: B\n"));
             printi(F("Increase loop count: q\n"));
             printi(F("Decrease loop count: w\n"));
-            printi(F("Sin increment: s\n"));
-            printi(F("Sin peak a\n"));
+            printi(F("Sine increment: s\n"));
+            printi(F("Sine peak a\n"));
             printi(F("Display current settings: H\n"));
             printi(F("_____________________________\n\n"));
         break;
@@ -363,11 +385,30 @@ void switchCase(char command){
             printi(F("8-13: Double colours\n"));
             printi(F("14-19: Bidirectional\n"));
             printi(F("20-23: Tripple variations\n"));
-            printi(F("24-30: Single sins\n"));
+            printi(F("24-30: Single sines\n"));
             printi(F("31-36: Double merging\n"));
             printi(F("37-39: Triple merging\n"));
             printi(F("40: Random Positions\n"));
             printi(F("41-46: Flowing colours\n"));
+            printi(F("47: Double counts\n"));
+            printi(F("48: Duty sweep\n"));
+            printi(F("_____________________________\n\n"));
+        break;
+        case 'e':
+            printi(F("_____________________________\n"));
+            printi(F("Saved values:\n"));
+            int temp_int;
+            float temp_float;
+            EEPROM.get(EEPROM_ADDRESS_MODE, temp_int);
+            printi(F("Mode: "), temp_int);
+            EEPROM.get(EEPROM_ADDRESS_PUMP_DUTY, temp_float);
+            printi(F("Pump drop frequency: "), temp_float, 3, F("%\n"));
+            EEPROM.get(EEPROM_ADDRESS_LED_DUTY, temp_float);
+            printi(F("Base duty valuse: "), temp_float, 2, F("%\n"));
+            EEPROM.get(EEPROM_ADDRESS_BASE_LOOP_COUNT, temp_int);
+            printi(F("Base loop count: "), (unsigned int)temp_int);
+            EEPROM.get(EEPROM_ADDRESS_SINE_INCREMENT, temp_float);
+            printi(F("Sine increment: "), radsToDeg(temp_float), 2, F("deg\n"));
             printi(F("_____________________________\n\n"));
         break;
     }
@@ -642,6 +683,9 @@ void setMode(int mode){
         case 47:
             modeLoops();
         break;
+        case 48:
+            modeLoops();
+        break;
     }
 }
 
@@ -656,7 +700,7 @@ int setDropFrequency(char freq[]){
         freq[0] = '0';//set to char 0
     }
     Wire.beginTransmission(I2C_ADDRESS_ATTINY85);
-    Wire.write(freq, 3);
+    Wire.write(freq, 9);
     int returnVal = Wire.endTransmission();
     if(returnVal == 0){//Sucsessful
         pump_drop_frequency = atof(freq); 
@@ -688,13 +732,21 @@ int setDropFrequency(char freq[]){
 
 void updateEeprom(void){//Save current settings
     EEPROM.put(EEPROM_ADDRESS_MODE, mode_status);
+    EEPROM.put(EEPROM_ADDRESS_PUMP_DUTY, pump_drop_frequency);
+    EEPROM.put(EEPROM_ADDRESS_LED_DUTY, base_duty);
+    EEPROM.put(EEPROM_ADDRESS_BASE_LOOP_COUNT, base_loop_count);
+    EEPROM.put(EEPROM_ADDRESS_SINE_INCREMENT, sin_count_increment);
     printi(F("\nSaved current settings.\n"));
 }
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
-void setEepromValues(void){
+void setEepromValues(void){//Read setting from the EEPROM
     EEPROM.get(EEPROM_ADDRESS_MODE, mode_status);
+    EEPROM.get(EEPROM_ADDRESS_PUMP_DUTY, pump_drop_frequency);
+    EEPROM.get(EEPROM_ADDRESS_LED_DUTY, base_duty);
+    EEPROM.get(EEPROM_ADDRESS_BASE_LOOP_COUNT, base_loop_count);
+    EEPROM.get(EEPROM_ADDRESS_SINE_INCREMENT, sin_count_increment);
 }
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
@@ -716,21 +768,27 @@ void initTimeFountain(){
     TCCR1A = 0;// set entire TCCR1A register to 0
     TCCR1B = 0;// same for TCCR1B
     TCNT1  = 0;//initialize counter value to 0
-    OCR1A = 15624;//m16000000 / (1*1024) - 1;// = (16*10^6) / (36*1024) - 1 (must be <65536)  // set compare match register for 1hz increments
+    OCR1A = 15624;//m16000000 / (1*1024) - 1;// = (16 * 10^6) / (36 * 1024) - 1 (must be < 65536)  // set compare match register for 1hz increments
     TCCR1B |= (1 << WGM12);// turn on CTC mode
     TCCR1B |= (1 << CS12) | (1 << CS10);  // Set CS12 and CS10 bits for 1024 prescaler
-    setEepromValues();
+    setEepromValues(); //Read valuses from the EEPROM and sent the variables
     setMode(mode_status);
+    char pumpFreqBuffer[10];
+    dtostrf(pump_drop_frequency, 9, 4, pumpFreqBuffer); //float to char * in PumpFreqBuffer
+    setDropFrequency(pumpFreqBuffer); //Set the pump
+}
+
+/*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+void getSerialData(void){
+    switchCase(Serial.read()); 
 }
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
 void modeLoops(void){
     while(mode_status <= 46){
-        if(Serial.available()){//Checks if serial data is available 
-            char c = Serial.read();//read and store the first character sent
-            switchCase(c);//TODO: test with: switchCase(Serial.read()); and/or switchCase((char)Serial.read());  
-        }
+        if(Serial.available()) getSerialData();
     
         if(red_count < red_duty_value){//Switch LEDs on/off for the set duty/frequency
             PORTD |= _BV(RED_PIN);  //write port HIGH
@@ -754,22 +812,22 @@ void modeLoops(void){
         }
     
         base_count++;//Increment counts  
-        red_count++;
+        red_count++;//Increment the red count 
         green_count++;
         blue_count++;
     
         if(base_count >= base_loop_count){
             base_count = 0;
-            if(flag_ms_stop){
+            if(flag_us_stop){
                 us = micros() - us;
-                flag_ms_stop = false;
-                flag_ms_start = false;
+                flag_us_stop = false;
+                flag_us_start = false;
                 float hz = 1/((float)us/1000000.0);
                 printi(F("Estimated frequency: "), hz, 3, F("Hz\n"));
             }
-            if(flag_ms_start){
+            if(flag_us_start){
                 us = micros();
-                flag_ms_stop = true;
+                flag_us_stop = true;
             }
                                 //TODO: 1/360 calculated when sin amp is set?
                                 //add count offset if colour is hight when calculating cos
@@ -804,7 +862,7 @@ void modeLoops(void){
             }
         }
     
-        if(red_count >= red_max_count){
+        if(red_count >= red_max_count){         
             red_count = 0;
         }
         if(green_count >= green_max_count){
@@ -816,11 +874,8 @@ void modeLoops(void){
     }
     
     while(mode_status == 47){
-        if(Serial.available()){//Checks if serial data is available 
-            char c = Serial.read();//read and store the first character sent
-            switchCase(c);//TODO: test with: switchCase(Serial.read()); and/or switchCase((char)Serial.read());  
-        }
-    
+        if(Serial.available()) getSerialData();
+        
         if(red_count < red_duty_value || red_count_2 < red_duty_value){//Switch LEDs on/off for the set duty/frequency
             PORTD |= _BV(RED_PIN);  //write port HIGH
         }
@@ -852,16 +907,16 @@ void modeLoops(void){
     
         if(base_count >= base_loop_count){
             base_count = 0;
-            if(flag_ms_stop){
+            if(flag_us_stop){
                 us = micros() - us;
-                flag_ms_stop = false;
-                flag_ms_start = false;
+                flag_us_stop = false;
+                flag_us_start = false;
                 float hz = 1/((float)us/1000000.0);
                 printi(F("Estimated frequency: "), hz, 3, F("Hz\n"));
             }
-            if(flag_ms_start){
+            if(flag_us_start){
                 us = micros();
-                flag_ms_stop = true;
+                flag_us_stop = true;
             }
         }
     
@@ -886,10 +941,92 @@ void modeLoops(void){
     }
 
     while(mode_status == 48){
-        if(Serial.available()){//Checks if serial data is available 
-            char c = Serial.read();//read and store the first character sent
-            switchCase(c);//TODO: test with: switchCase(Serial.read()); and/or switchCase((char)Serial.read());  
+        if(Serial.available()) getSerialData();
+    
+        if(red_count < red_duty_value){//Switch LEDs on/off for the set duty/frequency
+            PORTD |= _BV(RED_PIN);  //write port HIGH
         }
+        else{
+            PORTD &= ~_BV(RED_PIN);  //write port LOW
+        }
+        
+        if(green_count < green_duty_value){
+            PORTD |= _BV(GREEN_PIN);  //write port HIGH
+        }
+        else{
+            PORTD &= ~_BV(GREEN_PIN);  //write port LOW
+        }
+        
+        if(blue_count < blue_duty_value){
+            PORTD |= _BV(BLUE_PIN);  //write port HIGH
+        }
+        else{
+            PORTD &= ~_BV(BLUE_PIN);  //write port LOW
+        }
+    
+        base_count++;//Increment counts  
+        red_count++;
+        green_count++;
+        blue_count++;
+    
+        if(base_count >= base_loop_count){
+            base_count = 0;
+            
+            if(red_duty > 0){
+                red_duty_value += ((float)red_max_count * duty_increment / 100.0) * red_duty_direction;
+                if(red_duty_value > red_max_count && red_duty_direction == 1){
+                    red_duty_value = red_max_count;
+                    red_duty_direction = -1;
+                }
+                else if(red_duty_value > red_max_count && red_duty_direction == -1){
+                    red_duty_value = 0;
+                    red_duty_direction = 1;
+                }
+            }
+            
+
+            if(green_duty > 0){
+                green_duty_value += ((float)green_max_count * duty_increment / 100.0) * green_duty_direction;
+                if(green_duty_value > green_max_count && green_duty_direction == 1){
+                    green_duty_value = green_max_count;
+                    green_duty_direction = -1;
+                }
+                else if(green_duty_value > green_max_count && green_duty_direction == -1){
+                    green_duty_value = 0;
+                    green_duty_direction = 1;
+                }
+            }
+
+            if(blue_duty > 0){
+                blue_duty_value += ((float)blue_max_count * duty_increment / 100.0) * blue_duty_direction;
+                if(blue_duty_value > blue_max_count && blue_duty_direction == 1){
+                    blue_duty_value = blue_max_count;
+                    blue_duty_direction = -1;
+                }
+                else if(blue_duty_value > blue_max_count && blue_duty_direction == -1){
+                    blue_duty_value = 0;
+                    blue_duty_direction = 1;
+                }
+            }
+            
+
+//            if(blue_duty > 0){
+//                blue_duty_value += (float)blue_max_count * duty_increment / 100.0;
+//            }
+//            if(blue_duty_value > blue_max_count){
+//                blue_duty_value = (float)blue_max_count * blue_duty / 100.0; //reset to base duty
+//            }
+        }
+    
+        if(red_count >= red_max_count){
+            red_count = 0;
+        }
+        if(green_count >= green_max_count){
+            green_count = 0;
+        }
+        if(blue_count >= blue_max_count){
+            blue_count = 0;
+        }        
     }
 }
 
